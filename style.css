@@ -1,0 +1,558 @@
+/* ==========================================================================
+   BOXED REFLECTION · CONTROL PAGE · styling
+   DXB311 Interaction Design Capstone · Amritha Anil · n11539151
+
+   Black ground, animated gradient bars behind, frosted glass cards on top.
+   The only colour comes from whichever emotion is on screen, and it is kept
+   deliberately faint so the black stays black.
+
+   ADAPTED FROM (full notes in REFERENCES.md):
+
+   · The gradient bars, by @waleedkibhen on 21st.dev
+     https://21st.dev/community/components?q=gradient&preview=%2F%40waleedkibhen%2Fcomponents%2Fgradient-bars-background
+     Original is React. I rebuilt it in plain CSS and JavaScript, kept the
+     height formula, and changed the colour so it follows the emotion.
+
+   · The frosted glass card, from "glass-calendar" by @ravikatiyar162 on 21st.dev
+     https://21st.dev/community/components?q=frosted+card&preview=%2F%40ravikatiyar162%2Fcomponents%2Fglass-calendar
+     I took only the glass treatment, not the calendar: the backdrop blur, the
+     light 1px border and the layered shadow. The sheen is my addition.
+
+   · backdrop-filter, MDN
+     https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/Properties/backdrop-filter
+
+   · CSS transitions, MDN
+     https://developer.mozilla.org/en-US/docs/Web/CSS/Guides/Transitions
+
+   · prefers-reduced-motion, MDN
+     https://developer.mozilla.org/en-US/docs/Web/CSS/Reference/At-rules/@media/prefers-reduced-motion
+   ========================================================================== */
+
+:root {
+  --black:      #000000;
+  --ink:        #F2F2F7;
+  --ink-soft:   rgba(242, 242, 247, 0.62);
+  --ink-faint:  rgba(242, 242, 247, 0.34);
+
+  /* set per question by app.js */
+  --emotion:    255, 122, 46;
+  --bar-alpha:  0.42;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--black);
+  color: var(--ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+/* ==========================================================================
+   THE BARS
+   Adapted from the gradient-bars-background component by @waleedkibhen
+   (21st.dev, link at the top of this file). That one is written in React, so
+   I rebuilt it here in plain CSS and JS. The pulse animation and the bar
+   heights follow the original. What I changed: the colour is driven by a
+   custom property so it can follow the emotion, and the widths are worked out
+   in JavaScript rather than percentages (see the note in app.js).
+
+   Tall at the edges, short through the middle, breathing slowly. Each bar is
+   a vertical gradient from the emotion colour up into nothing.
+   ========================================================================== */
+
+@keyframes pulseBar {
+  0%   { transform: scaleY(var(--initial-scale)); }
+  100% { transform: scaleY(calc(var(--initial-scale) * 0.7)); }
+}
+
+.bars {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+/* Bars are positioned rather than flexed, and each is one pixel wider than its
+   slot so neighbours overlap. Flex leaves sub-pixel gaps between them, and on a
+   black ground those gaps read as hairlines straight through the frosted card. */
+.bar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  transform-origin: bottom;
+  background: linear-gradient(
+    to top,
+    rgba(var(--emotion), var(--bar-alpha)) 0%,
+    rgba(var(--emotion), 0) 100%
+  );
+  animation: pulseBar 2s ease-in-out infinite alternate;
+  transition: background 1200ms ease;    /* the colour crossfades between questions */
+}
+
+/* keeps the centre of the screen properly black so the cards sit in the dark */
+.vignette {
+  position: fixed;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 70% 62% at 50% 44%,
+    rgba(0, 0, 0, 0.92) 0%,
+    rgba(0, 0, 0, 0.72) 45%,
+    rgba(0, 0, 0, 0) 78%
+  );
+}
+
+/* ==========================================================================
+   SCREENS
+   ========================================================================== */
+
+#stage {
+  position: relative;
+  z-index: 2;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 32px 20px;
+}
+
+.screen {
+  display: none;
+  width: 100%;
+  max-width: 660px;
+  animation: riseIn 620ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.screen.is-active { display: block; }
+
+@keyframes riseIn {
+  from { opacity: 0; transform: translateY(14px) scale(0.985); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* ==========================================================================
+   THE FROSTED CARD
+   The glass treatment is adapted from the "glass-calendar" component by
+   @ravikatiyar162 (21st.dev, link at the top of this file). I only wanted the
+   glass, not the calendar, so I pulled out the three properties doing the work
+   and left everything else behind.
+
+   Three things make it read as liquid glass rather than a grey box:
+   1. backdrop-filter blurs the moving bars behind it. This is why it only
+      works over the bars. Over flat black there is nothing to blur and you
+      get a grey rectangle instead.
+   2. a 1px light border, brighter at the top than the bottom
+   3. a soft specular sheen sitting across the top left corner (my addition)
+   ========================================================================== */
+
+.glass {
+  position: relative;
+  overflow: hidden;
+  border-radius: 30px;
+  padding: 44px 44px 40px;
+
+  background:
+    linear-gradient(
+      160deg,
+      rgba(255, 255, 255, 0.085) 0%,
+      rgba(255, 255, 255, 0.030) 42%,
+      rgba(255, 255, 255, 0.015) 100%
+    );
+
+  backdrop-filter: blur(34px) saturate(165%);
+  -webkit-backdrop-filter: blur(34px) saturate(165%);
+
+  border: 1px solid rgba(255, 255, 255, 0.12);
+
+  box-shadow:
+    0 28px 70px rgba(0, 0, 0, 0.62),
+    0 2px 10px rgba(0, 0, 0, 0.40),
+    inset 0 1px 0 rgba(255, 255, 255, 0.17),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.04);
+}
+
+/* the sheen. A wide soft highlight, tinted very slightly by the emotion. */
+.glass::before {
+  content: "";
+  position: absolute;
+  inset: -40% -10% auto -10%;
+  height: 160%;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 52% 40% at 22% 8%,
+    rgba(255, 255, 255, 0.11) 0%,
+    rgba(var(--emotion), 0.045) 38%,
+    rgba(255, 255, 255, 0) 72%
+  );
+  transition: background 1200ms ease;
+}
+
+.glass > * { position: relative; }
+
+.glass-welcome { text-align: center; padding: 56px 48px 48px; }
+.glass-playing { text-align: center; padding: 48px; }
+
+/* ==========================================================================
+   TYPE
+   ========================================================================== */
+
+.eyebrow {
+  margin: 0 0 18px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(var(--emotion), 0.92);
+  transition: color 1200ms ease;
+}
+
+.display {
+  margin: 0 0 22px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(34px, 6vw, 52px);
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: -0.015em;
+}
+
+.display.small { font-size: clamp(26px, 4vw, 34px); margin-bottom: 14px; }
+
+.lede {
+  margin: 0 auto 16px;
+  max-width: 46ch;
+  font-size: 16.5px;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+
+.lede.quiet { color: var(--ink-faint); font-size: 15px; }
+
+.hint {
+  margin: 16px 0 0;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+}
+
+/* ==========================================================================
+   BUTTONS
+   ========================================================================== */
+
+.btn {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 999px;
+  padding: 15px 46px;
+  transition: transform 180ms ease, background 220ms ease,
+              border-color 220ms ease, box-shadow 220ms ease;
+}
+
+.btn:active { transform: scale(0.975); }
+
+.btn-primary {
+  margin-top: 30px;
+  color: #0B0B0F;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10px 34px rgba(0, 0, 0, 0.5);
+}
+
+.btn-primary:hover {
+  background: #FFFFFF;
+  box-shadow: 0 14px 42px rgba(var(--emotion), 0.28), 0 10px 34px rgba(0, 0, 0, 0.5);
+}
+
+.btn-ghost {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.20);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.13);
+  border-color: rgba(255, 255, 255, 0.34);
+}
+
+.btn-ghost.small { font-size: 13px; padding: 11px 26px; margin-top: 26px; }
+
+/* the host block, deliberately set apart from the visitor's half */
+.attendant {
+  margin-top: 40px;
+  padding-top: 30px;
+  border-top: 1px solid rgba(255, 255, 255, 0.10);
+}
+
+.attendant-label {
+  margin: 0 0 16px;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+/* ==========================================================================
+   PROGRESS
+   ========================================================================== */
+
+.progress-wrap { margin: 0 4px 20px; }
+
+.progress-meta {
+  margin-bottom: 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.progress-track {
+  height: 2px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.10);
+  overflow: hidden;
+}
+
+.progress-track.wide { margin: 26px auto 0; max-width: 340px; height: 3px; }
+
+.progress-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 2px;
+  background: rgba(var(--emotion), 0.85);
+  transition: width 480ms cubic-bezier(0.16, 1, 0.3, 1), background 1200ms ease;
+}
+
+/* ==========================================================================
+   QUESTION CARD
+   ========================================================================== */
+
+.q-scenario {
+  margin: 0 0 30px;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: clamp(19px, 2.6vw, 24px);
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: -0.005em;
+}
+
+.options { display: grid; gap: 11px; }
+
+/* each answer is its own smaller pane of glass */
+.option {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  width: 100%;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  font-size: 15.5px;
+  line-height: 1.5;
+  color: var(--ink-soft);
+  padding: 17px 20px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  transition: background 200ms ease, border-color 200ms ease,
+              color 200ms ease, transform 200ms ease;
+}
+
+.option:hover {
+  background: rgba(255, 255, 255, 0.075);
+  border-color: rgba(255, 255, 255, 0.2);
+  color: var(--ink);
+  transform: translateX(3px);
+}
+
+.option .letter {
+  flex: 0 0 auto;
+  width: 22px;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  padding-top: 2px;
+  color: var(--ink-faint);
+  transition: color 200ms ease;
+}
+
+.option:hover .letter { color: rgba(var(--emotion), 0.95); }
+
+/* the chosen answer, held for a beat before the next question arrives */
+.option.is-chosen {
+  background: rgba(var(--emotion), 0.13);
+  border-color: rgba(var(--emotion), 0.5);
+  color: var(--ink);
+  transform: translateX(3px);
+  box-shadow: 0 0 0 1px rgba(var(--emotion), 0.22),
+              0 10px 30px rgba(var(--emotion), 0.14);
+}
+
+.option.is-chosen .letter { color: rgba(var(--emotion), 1); }
+
+.back {
+  margin: 26px 0 0;
+  padding: 0;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  font: inherit;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  transition: color 200ms ease;
+}
+
+.back:hover { color: var(--ink-soft); }
+.back[hidden] { display: none; }
+
+/* ==========================================================================
+   SMALL SCREENS
+   ========================================================================== */
+
+@media (max-width: 640px) {
+  .glass { padding: 32px 24px 28px; border-radius: 24px; }
+  .glass-welcome { padding: 40px 24px 32px; }
+  .option { font-size: 15px; padding: 15px 16px; }
+}
+
+/* respect a visitor who has asked for less movement */
+@media (prefers-reduced-motion: reduce) {
+  .bar { animation: none; }
+  .screen { animation: none; }
+  .btn, .option { transition: none; }
+}
+
+
+/* ==========================================================================
+   CONNECTION INDICATOR
+   Tells the host at a glance whether show.html is actually open. The
+   Start button stays disabled until it is, which prevents the single most
+   likely mistake on the night: pressing start with no projection running.
+   ========================================================================== */
+
+.link {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 14px 8px 12px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--ink-faint);
+  transition: color 300ms ease, border-color 300ms ease;
+}
+
+.link .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #8A5A2A;
+  transition: background 300ms ease, box-shadow 300ms ease;
+}
+
+.link.is-live { color: var(--ink-soft); border-color: rgba(120, 200, 150, 0.28); }
+.link.is-live .dot { background: #5FBF8A; box-shadow: 0 0 10px rgba(95, 191, 138, 0.6); }
+
+.btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+
+/* ==========================================================================
+   PROJECTION SETUP BAR
+   Only useful before the doors open, so it sits quietly in the corner and
+   hides itself once a visitor has started answering.
+   ========================================================================== */
+
+.setup {
+  position: fixed;
+  right: 18px;
+  bottom: 18px;
+  z-index: 5;
+  padding: 14px 16px 12px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  transition: opacity 400ms ease;
+}
+
+.setup[hidden] { display: none; }
+
+.setup-label {
+  margin: 0 0 10px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+#map-state { color: #5FBF8A; }
+#map-state.locked { color: #E8554A; }
+
+.mini {
+  appearance: none;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 8px;
+  padding: 7px 13px;
+  margin-right: 6px;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
+}
+
+.mini:hover  { background: rgba(255, 255, 255, 0.12); border-color: rgba(255,255,255,.28); color: var(--ink); }
+.mini:active { transform: scale(0.97); }
+.mini[disabled] { opacity: 0.35; pointer-events: none; }
+
+.setup-hint {
+  margin: 10px 0 0;
+  font-size: 10.5px;
+  line-height: 1.4;
+  color: rgba(242, 242, 247, 0.26);
+  max-width: 190px;
+}
+
+
+/* The button that opens the projection window, tucked into the status pill.
+   It hides itself once the two windows have found each other, because at that
+   point pressing it again would only open a second projection. */
+.link-open {
+  margin-left: 10px;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  letter-spacing: 0.06em;
+}
+.link.is-live .link-open { display: none; }
