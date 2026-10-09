@@ -5,8 +5,9 @@
    This is the window that goes on the projector. Drag it to the second
    display and press F for fullscreen.
 
-   It does nothing on its own. It waits for the control page to send the ten
-   answers, then waits again for the attendant to press start.
+   It does nothing on its own. It waits for the control page to send the
+   answers (nine, or ten with a tie breaker), then waits again for the
+   attendant to press start.
 
      IDLE    slow drift, nothing has been sent yet
      ARMED   answers received, waiting for the attendant
@@ -467,10 +468,21 @@ function measure() {
 }
 
 function windowResized() {
-  resizeCanvas(windowWidth, windowHeight);
+  /* window.innerWidth rather than p5's windowWidth, because this is also
+     called from the fullscreen check in draw(), where p5 may not have heard
+     about the new size yet. */
+  resizeCanvas(window.innerWidth, window.innerHeight);
   measure();
   if (typeof mappingResized === 'function') mappingResized();
 }
+
+/* Going fullscreen (F, F11, or the green button) does not always end with a
+   clean resize event, especially on a second display. This catches whatever
+   the event missed, so the canvas and the corners always match the screen. */
+function keepFullSize() {
+  if (width !== window.innerWidth || height !== window.innerHeight) windowResized();
+}
+document.addEventListener('fullscreenchange', () => setTimeout(keepFullSize, 120));
 
 /* --------------------------------------------------------------------------
    THE DRAW LOOP
@@ -478,6 +490,7 @@ function windowResized() {
 
 function draw() {
   GLINT = millis() / 1000;
+  keepFullSize();
 
   /* While the corners are being set, the canvas goes solid white. That white
      shape IS the mapped area: it is the thing the matrix3d warp is applied
@@ -664,10 +677,12 @@ function drawPlaying() {
   const elapsed = millis() - startAt;
   const seg = Math.floor(elapsed / SEGMENT_MS);
 
-  if (seg >= SCENARIOS.length) { finish(); return; }
+  /* nine segments, or ten when a tie breaker was asked */
+  const scenes = filmScenes(answers);
+  if (seg >= scenes.length) { finish(); return; }
 
   const t = (elapsed % SEGMENT_MS) / SEGMENT_MS;
-  const scenario = SCENARIOS[seg];
+  const scenario = scenes[seg];
   const rgb = scenario.rgb.split(',').map(n => parseInt(n, 10));
 
   /* The residue dismiss leaves behind. Painted UNDER the orbs in normal blend
@@ -740,8 +755,11 @@ const ROWS = [['express',  'Express your emotions',  [255, 233, 196]],
               ['suppress', 'Suppress your emotions', [116, 150, 190]],
               ['dismiss',  'Dismiss your emotions',  [150,  90,  90]]];
 
-const BEAT_ONE_MS = 5600;    // their own nine
-const BEAT_TWO_MS = 6800;    // everyone so far
+/* How long each results screen stays on the wall. Both were too quick to
+   read and then go and place a sticker, so they are roughly doubled. Change
+   these two numbers to taste: they are in milliseconds. */
+const BEAT_ONE_MS = 10000;   // "Results are in", their counts
+const BEAT_TWO_MS = 15000;   // "You are more...", and the sticker
 
 let resultAt = 0;
 let sessionTally = null;     // the running total, captured when the film ends
@@ -802,9 +820,45 @@ function drawResultRows(counts, fade, yTop, rowGap, numSize, labSize) {
   textStyle(NORMAL);
 }
 
+/* The verdict words. Expressive and suppressive keep their original colours,
+   dismissive takes the colour of its row on the count screen, lifted a little
+   so it holds up at headline size. */
+const VERDICT = {
+  express:  ['EXPRESSIVE',  [255, 219, 168]],
+  suppress: ['SUPPRESSIVE', [140, 168, 205]],
+  dismiss:  ['DISMISSIVE',  [206, 132, 132]]
+};
+
+/* Draws one or more verdict words on a single centred line, each in its own
+   colour, joined by "&" or ", ". Shrinks to fit if three words would run off
+   the wall. */
+function drawVerdictWords(keys, y, size, alpha) {
+  const parts = [];
+  keys.forEach((k, i) => {
+    if (i > 0) parts.push([i === keys.length - 1 ? '  &  ' : ',  ', [190, 190, 205]]);
+    parts.push([VERDICT[k][0], VERDICT[k][1]]);
+  });
+
+  textSize(size);
+  let total = parts.reduce((w, [str]) => w + textWidth(str), 0);
+  if (total > width * 0.88) {
+    size *= (width * 0.88) / total;
+    textSize(size);
+    total = parts.reduce((w, [str]) => w + textWidth(str), 0);
+  }
+
+  textAlign(LEFT, CENTER);
+  let x = cx - total / 2;
+  parts.forEach(([str, rgb]) => {
+    fill(rgb[0], rgb[1], rgb[2], alpha);
+    text(str, x, y);
+    x += textWidth(str);
+  });
+  textAlign(CENTER, CENTER);
+}
+
 function drawResult() {
-  const counts = { express: 0, suppress: 0, dismiss: 0 };
-  answers.forEach(a => counts[a]++);
+  const counts = countAnswers(answers);
 
   const since = millis() - resultAt;
   blendMode(BLEND);
@@ -838,22 +892,23 @@ function drawResult() {
 
   /* beat two: the verdict.
 
-     Express on one side, suppress AND dismiss on the other, because both of
-     those keep the feeling off the outside of the person. Nine answers is an
-     odd number, so this can never tie: five or more express and you lean
-     expressive, otherwise you lean suppressive. */
+     Same look as the original, but dismiss is now its own answer rather than
+     being counted with suppress, so it is one of three: expressive,
+     suppressive or dismissive, whichever they chose most. The tie breaker on
+     the laptop means this is always one word. If it somehow still comes out
+     level (the tie breaker switched off, say), it names every one that tied
+     and asks for a sticker on each. */
   const since2 = since - BEAT_ONE_MS;
   if (since2 < BEAT_TWO_MS) {
-    const held = counts.suppress + counts.dismiss;
-    const expressive = counts.express > held;
-    const word = expressive ? 'EXPRESSIVE' : 'SUPPRESSIVE';
-    const tint = expressive ? [255, 219, 168] : [140, 168, 205];
+    const lead = leadersOf(answers);
+    const single = lead.length === 1;
     const out = since2 > BEAT_TWO_MS - 800
       ? 1 - (since2 - (BEAT_TWO_MS - 800)) / 800 : 1;
 
     push();
     drawingContext.globalAlpha = Math.max(0, out);
     textAlign(CENTER, CENTER);
+    textStyle(NORMAL);
 
     const a1 = constrain(since2 / 700, 0, 1);
     fill(150, 150, 170, 150 * a1);
@@ -861,17 +916,27 @@ function drawResult() {
     text('BASED ON YOUR ANSWERS', cx, cy - minDim * 0.175);
 
     const a2 = constrain((since2 - 500) / 800, 0, 1);
-    fill(tint[0], tint[1], tint[2], 240 * a2);
-    textSize(minDim * 0.088);
-    text('You are more', cx, cy - minDim * 0.055);
-    textSize(minDim * 0.105);
-    text(word, cx, cy + minDim * 0.055);
+    if (single) {
+      const [word, tint] = VERDICT[lead[0]];
+      fill(tint[0], tint[1], tint[2], 240 * a2);
+      textSize(minDim * 0.088);
+      text('You are more', cx, cy - minDim * 0.055);
+      textSize(minDim * 0.105);
+      text(word, cx, cy + minDim * 0.055);
+    } else {
+      fill(222, 222, 236, 230 * a2);
+      textSize(minDim * 0.088);
+      text('You are equally', cx, cy - minDim * 0.055);
+      drawVerdictWords(lead, cy + minDim * 0.055, minDim * 0.105, 240 * a2);
+    }
 
     const a3 = constrain((since2 - 2000) / 900, 0, 1);
     if (a3 > 0) {
       fill(205, 205, 220, 175 * a3);
       textSize(minDim * 0.032);
-      text('Place the sticker on the corresponding side', cx, cy + minDim * 0.185);
+      text(single ? 'Place the sticker on the corresponding side'
+                  : 'Place a sticker on each of these sides',
+           cx, cy + minDim * 0.185);
     }
     pop();
     return;
@@ -904,7 +969,7 @@ function begin() {
 function finish() {
   state = 'RESULT';
   resultAt = millis();
-  sessionTally = addToTally(answers);   // counted once, when the film ends
+  sessionTally = addToTally(answers);   // counted once, when the film ends (tie breaker included)
   if (typeof audioStop === 'function') audioStop();
   announce();
 }
@@ -937,7 +1002,12 @@ channel.onmessage = (e) => {
 
 /* heartbeat, so the control page knows this window is open and can enable its
    Start button. Without this the attendant can press start into nothing. */
-setInterval(() => channel.postMessage({ type: 'hello', state }), 2000);
+/* The mapping state rides along too, so the corner grid and lock buttons on
+   the laptop are right even when this window was opened after it. */
+setInterval(() => {
+  channel.postMessage({ type: 'hello', state });
+  if (typeof reportMapping === 'function') reportMapping();
+}, 2000);
 
 /* --------------------------------------------------------------------------
    KEYBOARD
