@@ -12,7 +12,8 @@
      https://developer.mozilla.org/en-US/docs/Web/API/BroadcastChannel
 
    MESSAGES THIS PAGE SENDS
-     { type:'session', answers:[...10] }   the ten answers, arms the projection
+     { type:'session', answers:[...] }     the nine answers (ten with a tie
+                                           breaker), arms the projection
      { type:'start' }                      host pressed start
      { type:'abort' }                      reset everything
 
@@ -160,6 +161,11 @@ let current = 0;
 let answers = [];
 let locked = false;
 let playTimer = null;
+let tied = [];          // the behaviours level at the top after nine, if any
+
+/* The tie breaker sits one place past the last scenario, so the existing
+   back button and question flow carry it with no special screen of its own. */
+function isTiebreak() { return current === SCENARIOS.length; }
 
 /* --------------------------------------------------------------------------
    TRANSITIONS
@@ -219,20 +225,28 @@ function fadeOutCard(done) {
    -------------------------------------------------------------------------- */
 
 function renderQuestion() {
-  const s = SCENARIOS[current];
+  const tb = isTiebreak();
+  const s  = tb ? TIEBREAKER : SCENARIOS[current];
   setEmotionColour(s.rgb, 0.42);
 
-  document.getElementById('q-count').textContent =
-    String(current + 1).padStart(2, '0') +
-    ' / ' + String(SCENARIOS.length).padStart(2, '0');
+  document.getElementById('q-count').textContent = tb
+    ? 'Tie breaker'
+    : String(current + 1).padStart(2, '0') + ' / ' + String(SCENARIOS.length).padStart(2, '0');
   document.getElementById('q-progress').style.width =
-    (current / SCENARIOS.length * 100) + '%';
+    (tb ? 100 : current / SCENARIOS.length * 100) + '%';
+  const note = document.getElementById('q-note');
+  if (note) note.hidden = !tb;
   document.getElementById('q-text').textContent = s.text;
+
+  /* On the tie breaker only the options that were tied are offered, and the
+     letters run A, B (C) in order so nothing looks missing. */
+  const all   = [[s.a, 'express'], [s.b, 'suppress'], [s.c, 'dismiss']];
+  const shown = tb ? all.filter(([, behaviour]) => tied.includes(behaviour)) : all;
 
   const box = document.getElementById('q-options');
   box.innerHTML = '';
-  [['A', s.a, 'express'], ['B', s.b, 'suppress'], ['C', s.c, 'dismiss']]
-    .forEach(([letter, copy, behaviour]) => {
+  shown.forEach(([copy, behaviour], i) => {
+      const letter = 'ABC'.charAt(i);
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'option';
@@ -255,14 +269,27 @@ function choose(button, behaviour) {
   button.classList.add('is-chosen');
 
   document.getElementById('q-progress').style.width =
-    ((current + 1) / SCENARIOS.length * 100) + '%';
+    Math.min(100, (current + 1) / SCENARIOS.length * 100) + '%';
 
   setTimeout(() => {
     if (current < SCENARIOS.length - 1) {
       crossfade(() => { current++; renderQuestion(); }, () => { locked = false; });
-    } else {
-      fadeOutCard(() => { goHandoff(); locked = false; });
+      return;
     }
+
+    /* The ninth answer is in. Check for a tie BEFORE anything is sent to the
+       wall. Any old tie breaker answer is dropped first, because going back
+       and changing an answer can make or break a tie. */
+    if (current === SCENARIOS.length - 1) {
+      answers.length = SCENARIOS.length;
+      tied = leadersOf(answers);
+      if (tied.length > 1) {
+        crossfade(() => { current++; renderQuestion(); }, () => { locked = false; });
+        return;
+      }
+    }
+
+    fadeOutCard(() => { goHandoff(); locked = false; });
   }, 420);
 }
 
@@ -280,7 +307,9 @@ function goWelcome() {
   clearInterval(playTimer);
   current = 0;
   answers = [];
+  tied = [];
   locked = false;
+  stampCounts();          // back to "nine" and "forty-five" for the next person
   setEmotionColour(NEUTRAL_RGB, 0.34);
   channel.postMessage({ type: 'abort' });
   showSetupBar(true);
@@ -291,6 +320,7 @@ function goQuestions() {
   showSetupBar(false);
   current = 0;
   answers = [];
+  tied = [];
   locked = false;
   renderQuestion();
   show('question');
@@ -299,11 +329,13 @@ function goQuestions() {
 
 function goHandoff() {
   setEmotionColour(NEUTRAL_RGB, 0.30);
+  // "That is all ten" and "fifty seconds" when there was a tie breaker
+  stampCounts(answers.length, filmScenes(answers).length);
   show('handoff');
   setLink(showAlive);
 
   // THIS is the line that connects the form to the projection.
-  // The ten answers go across, the projection arms itself and waits.
+  // The answers go across, the projection arms itself and waits.
   channel.postMessage({ type: 'session', answers: answers.slice() });
 }
 
@@ -314,7 +346,7 @@ function goPlaying() {
 
   channel.postMessage({ type: 'start' });
 
-  const total = SCENARIOS.length * (SEGMENT_MS / 1000);
+  const total = filmScenes(answers).length * (SEGMENT_MS / 1000);
   let left = total;
   const status = document.getElementById('play-status');
   const fill = document.getElementById('play-progress');
@@ -323,7 +355,7 @@ function goPlaying() {
     fill.style.width = ((total - left) / total * 100) + '%';
     status.textContent = left > 0
       ? left + ' second' + (left === 1 ? '' : 's') + ' remaining'
-      : 'Finished';
+      : 'Results are on the wall';
     if (left <= 0) clearInterval(playTimer);
     left--;
   };
@@ -354,9 +386,10 @@ function inWords(n) {
   return unit ? tens[Math.floor(n / 10)] + '-' + WORDS[unit] : tens[Math.floor(n / 10)];
 }
 
-function stampCounts() {
-  const n       = SCENARIOS.length;
-  const seconds = n * (SEGMENT_MS / 1000);
+/* n is how many questions were answered, segs is how many play in the film.
+   Both default to the nine. */
+function stampCounts(n = SCENARIOS.length, segs = n) {
+  const seconds = segs * (SEGMENT_MS / 1000);
   const values  = {
     count:        String(n),
     countWord:    inWords(n),
