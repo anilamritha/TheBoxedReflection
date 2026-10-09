@@ -229,13 +229,13 @@ function renderQuestion() {
   const s  = tb ? TIEBREAKER : SCENARIOS[current];
   setEmotionColour(s.rgb, 0.42);
 
+  /* The visitor is never told it was a tie. To them the tie breaker is just
+     the last question. */
   document.getElementById('q-count').textContent = tb
-    ? 'Tie breaker'
+    ? 'Final question'
     : String(current + 1).padStart(2, '0') + ' / ' + String(SCENARIOS.length).padStart(2, '0');
   document.getElementById('q-progress').style.width =
     (tb ? 100 : current / SCENARIOS.length * 100) + '%';
-  const note = document.getElementById('q-note');
-  if (note) note.hidden = !tb;
   document.getElementById('q-text').textContent = s.text;
 
   /* On the tie breaker only the options that were tied are offered, and the
