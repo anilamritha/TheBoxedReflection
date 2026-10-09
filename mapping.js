@@ -29,6 +29,15 @@
    Corner positions and the lock state are saved in localStorage, so a reload,
    a crash or a laptop restart does not lose the alignment.
 
+   WHY THE CORNERS ARE STORED AS FRACTIONS
+   They used to be saved in pixels for one exact window size. Going fullscreen
+   on the projector changes the size (and passes through in between sizes on
+   the way), so the saved corners stopped matching, the canvas got squeezed
+   into the old window size, and C showed the grid in the wrong place or not
+   at all. Corners are now kept as fractions of the screen (0 to 1), so they
+   follow the window into and out of fullscreen and always land on the same
+   spot of the wall.
+
    DO THE HARDWARE FIRST
    Most projectors have keystone correction in their own menu. Square the
    image there first. A software warp correcting a badly keystoned projector
@@ -38,6 +47,7 @@
 const STORE_KEY = 'boxed-reflection-mapping';
 
 let corners = null;       // [{x,y} x4] in screen pixels: TL, TR, BR, BL
+let norm = null;          // the same four corners as fractions of the screen
 let calibrating = false;
 let mapLocked = false;
 let dragIndex = -1;
@@ -46,13 +56,23 @@ let selected = 0;
 function mappingSetup() {
   const saved = loadMapping();
   if (saved) {
-    corners = saved.corners;
+    norm = saved.norm;
     mapLocked = saved.locked;
+    cornersFromNorm();
   } else {
     resetCorners();
   }
   applyWarp();
   attachHandleDragging();
+}
+
+function cornersFromNorm() {
+  corners = norm.map(p => ({ x: p.x * width, y: p.y * height }));
+}
+
+function normFromCorners() {
+  if (!corners || !width || !height) return;
+  norm = corners.map(c => ({ x: c.x / width, y: c.y / height }));
 }
 
 function resetCorners() {
@@ -62,12 +82,16 @@ function resetCorners() {
     { x: width, y: height },
     { x: 0,     y: height }
   ];
+  normFromCorners();
 }
 
+/* Window went fullscreen, came out of it, or moved to the projector. The
+   corners are rebuilt from the fractions at the new size, so the alignment
+   and the lock both survive. */
 function mappingResized() {
-  // the saved corners were in pixels for the old size, so start clean
-  if (!loadMapping()) resetCorners();
+  if (norm) cornersFromNorm(); else resetCorners();
   applyWarp();
+  reportMapping();
 }
 
 function loadMapping() {
@@ -75,18 +99,22 @@ function loadMapping() {
     const raw = localStorage.getItem(STORE_KEY);
     if (!raw) return null;
     const d = JSON.parse(raw);
-    if (!d.corners || d.corners.length !== 4) return null;
-    if (d.w !== window.innerWidth || d.h !== window.innerHeight) return null;
-    return d;
+    if (Array.isArray(d.norm) && d.norm.length === 4) {
+      return { norm: d.norm, locked: !!d.locked };
+    }
+    // an older save, in pixels for one window size: convert it to fractions
+    if (Array.isArray(d.corners) && d.corners.length === 4 && d.w && d.h) {
+      return { norm: d.corners.map(c => ({ x: c.x / d.w, y: c.y / d.h })),
+               locked: !!d.locked };
+    }
+    return null;
   } catch (e) { return null; }
 }
 
 function saveMapping() {
+  normFromCorners();
   try {
-    localStorage.setItem(STORE_KEY, JSON.stringify({
-      corners, locked: mapLocked,
-      w: window.innerWidth, h: window.innerHeight
-    }));
+    localStorage.setItem(STORE_KEY, JSON.stringify({ norm, locked: mapLocked }));
   } catch (e) { console.warn('could not save the mapping:', e); }
 }
 
@@ -141,6 +169,9 @@ function applyWarp() {
 
   const m = unitSquareToQuad(corners);
   if (!m) return;
+
+  // keep the fractions in step with every move, saved or not
+  normFromCorners();
 
   cvs.style.transformOrigin = '0 0';
   cvs.style.transform =
@@ -262,6 +293,7 @@ document.addEventListener('keydown', (e) => {
     corners[selected].x += map[e.key][0];
     corners[selected].y += map[e.key][1];
     applyWarp();
+    saveMapping();
   }
   if (e.key >= '1' && e.key <= '4') selected = parseInt(e.key, 10) - 1;
 });
@@ -322,18 +354,21 @@ function attachHandleDragging() {
 /* Clicking anywhere else on the screen while calibrating selects and moves the
    nearest corner, so there is a way to grab one even if a handle ends up under
    the instruction panel. */
+/* winMouseX rather than mouseX: mouseX is measured against the canvas, and
+   once the canvas is warped its box no longer lines up with the screen, so a
+   click put the corner in the wrong place. */
 function mousePressed() {
   if (!calibrating || mapLocked || dragIndex >= 0) return;
 
   let best = -1, bestDist = Infinity;
   for (let i = 0; i < 4; i++) {
-    const d = dist(mouseX, mouseY, corners[i].x, corners[i].y);
+    const d = dist(winMouseX, winMouseY, corners[i].x, corners[i].y);
     if (d < bestDist) { bestDist = d; best = i; }
   }
   if (best >= 0 && bestDist < 160) {
     selected = best;
-    corners[best].x = mouseX;
-    corners[best].y = mouseY;
+    corners[best].x = winMouseX;
+    corners[best].y = winMouseY;
     applyWarp();
     saveMapping();
   }
