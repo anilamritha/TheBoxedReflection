@@ -1,4 +1,4 @@
-/* The ten scenarios. A = express, B = suppress, C = dismiss, every time.
+/* The nine scenarios. A = express, B = suppress, C = dismiss, every time.
    `rgb` drives the colour on both the form and the projection.
    `bed` names which ambience file plays. Version A only. */
 
@@ -58,6 +58,56 @@ const SCENARIOS = [
     b:'Keep your excitement to yourself because you don\u2019t want to seem socially awkward, and express your happiness later in private.',
     c:'Brush it off as if it is no big deal.' }
 ];
+
+/* ==========================================================================
+   THE TIE BREAKER
+
+   The last screen tells the visitor which of the three they are most likely
+   to do, so nine answers can now come out level at the top: 4 v 4 v 1, or
+   3 v 3 v 3. The laptop checks this the moment the ninth answer is in, before
+   anything plays, and if it is a tie it asks this one extra question.
+
+   Only the options that were tied are shown. 4 v 4 v 1 gets two options,
+   3 v 3 v 3 gets all three. That means this single question always settles
+   it and there is never a second tie.
+
+   Reword it freely. It is only ever read from here.
+   ========================================================================== */
+
+const TIEBREAKER = { emotion:'Grief', rgb:'92, 92, 196', bed:'ocean',
+  text:'A close family member has been involved in an accident and passed away. You live interstate and will be travelling home to be with your family in the next few days.',
+  a:'Express your emotions openly, regardless of whether you are alone or with family. You can\u2019t control when you are upset, so you don\u2019t hide the emotions.',
+  b:'Allow yourself to grieve privately before travelling, so you can stay strong for your family.',
+  c:'Keep yourself busy with arrangements, work and responsibilities to avoid confronting your emotions.' };
+
+/* true:  the tie breaker plays as a tenth segment of the film, in its colour.
+   false: it only counts towards the results and the film stays at nine. */
+const TIEBREAK_IN_FILM = true;
+
+/* Shared by both pages, so the laptop and the wall always agree on what
+   counts as a tie. */
+const BEHAVIOURS = ['express', 'suppress', 'dismiss'];
+
+function countAnswers(list) {
+  const c = { express: 0, suppress: 0, dismiss: 0 };
+  list.forEach(a => { if (c[a] !== undefined) c[a]++; });
+  return c;
+}
+
+/* every behaviour sitting on the top count. One name means a clear winner,
+   two or three means a tie. */
+function leadersOf(list) {
+  const c = countAnswers(list);
+  const top = Math.max(c.express, c.suppress, c.dismiss);
+  return BEHAVIOURS.filter(b => c[b] === top);
+}
+
+/* the scenarios the film actually plays for this list of answers */
+function filmScenes(list) {
+  return (TIEBREAK_IN_FILM && list.length > SCENARIOS.length)
+    ? SCENARIOS.concat([TIEBREAKER])
+    : SCENARIOS;
+}
 
 const CHANNEL      = 'boxed-reflection';
 const SEGMENT_MS   = 5000;
