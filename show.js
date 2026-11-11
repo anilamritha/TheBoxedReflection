@@ -1,6 +1,70 @@
+/*
+============================================================================
+FILE:        show.js
+AUTHOR:      Amritha Anil
+STUDENT ID:  n11539151
+UNIT/COURSE: DXB311 Interaction Design Capstone
+ASSIGNMENT:  The Boxed Reflection (exhibition installation)
+DATE:        23 October 2026
+============================================================================
+DESCRIPTION:
+    The p5.js sketch that runs on the projector. It draws a field of 7200
+    particles of light and moves them with three behaviours: express bursts
+    outward like fireworks, suppress shrinks and fades into the distance, and
+    dismiss is ten small clusters of light that go one orb at a time, one
+    cluster after another, while a dark wash of the colour comes up behind. Each answer gets a five second segment
+    in its scenario colour. Afterwards it shows the counts, then the verdict
+    (expressive, suppressive or dismissive), and adds the answers to an
+    anonymous running tally.
+BASED ON / SOURCES:
+    p5.js (v1.9.4) and the p5.js reference: setup(), draw(), createGraphics(),
+    blendMode(), drawingContext, fullscreen(), windowResized(), keyPressed().
+    The Coding Train and The Nature of Code (Daniel Shiffman) videos and
+    written lessons: getting started with p5.js, arrays of objects, polar
+    coordinates, lerp and easing, and particle systems. Each one is marked
+    "LEARNED FROM" where it is used below. Full list in REFERENCES.md.
+    Canvas 2D globalCompositeOperation (MDN) for the light blending.
+    mulberry32 seeded random number generator by Tommy Ettinger (public domain).
+    Bokeh and firework look based on my own reference boards.
+    Links in REFERENCES.md.
+INTERACTS WITH:
+    show.html      the page and canvas this draws into
+    scenarios.js   SCENARIOS, TIEBREAKER, SEGMENT_MS, CHANNEL, leadersOf
+    mapping.js     the corner warp (mappingSetup, mappingDraw and friends)
+    app.js         receives session / start / abort / calibrate / lockToggle,
+                   sends hello / finished / mapping / state
+    localStorage   boxed-reflection-tally (the running total)
+CHANGE HISTORY (what was changed and why):
+    Oct 2026: the results stayed up too briefly to read and then place a
+    sticker. The counts screen went from 5.6 to 10 seconds and the verdict from
+    6.8 to 15 seconds (BEAT_ONE_MS and BEAT_TWO_MS).
+    Oct 2026: the verdict was two way (expressive or suppressive, with dismiss
+    counted as suppressive). It is now three way with DISMISSIVE added. A
+    "You're more likely to ..." wording was tried first, then changed back to
+    the original "You are more ..." look.
+    Oct 2026: the film plays the tie breaker as a tenth segment, and draw()
+    checks the canvas still matches the screen after going fullscreen.
+    Nov 2026: dismiss was changed. It used to be a still field of dots across
+    the whole wall that cut out in a single frame at two seconds, on top of a
+    dark wash that was there from the start. Now the first frame is ten
+    small clusters of six to twelve orbs each. From 0.4 seconds the clusters
+    disappear one at a time, one orb at a time, until every orb has gone at
+    4.5 seconds. The dark wash slowly comes up the whole time they are going,
+    and the last 0.5 seconds is just the wash. The old 'snap' version and the
+    'vanish' version are both still in the code (DISMISS_STYLE).
+HONOUR CODE / ACADEMIC INTEGRITY:
+    I hereby declare that this submission is my own work. Any code, ideas,
+    or text from other sources have been fully acknowledged and cited.
+
+    AI acknowledgement: Generative AI (Claude, by Anthropic) was used as a
+    coding assistant during development (explanations, debugging and some
+    implementation). The October and November 2026 changes in the change
+    history above were written with Claude. Full details are in my AI use declaration.
+============================================================================
+*/
+
 /* ==========================================================================
-   BOXED REFLECTION · PROJECTION PAGE
-   DXB311 Interaction Design Capstone · Amritha Anil · n11539151
+   NOTES
 
    This is the window that goes on the projector. Drag it to the second
    display and press F for fullscreen.
@@ -11,17 +75,17 @@
 
      IDLE    slow drift, nothing has been sent yet
      ARMED   answers received, waiting for the attendant
-     PLAYING the fifty second film, ten segments of five seconds
-     RESULT  their own answers counted back to them
+     PLAYING the forty-five second film, nine segments of five seconds
+             (fifty seconds and ten segments when there was a tie breaker)
+     RESULT  their counts, then the verdict, then back to IDLE
      then back to IDLE
 
    THE WHOLE SYSTEM IN ONE LINE
      the scenario sets the colour, the answer sets the motion.
-   Ten colours times three motions is thirty outcomes, built from thirteen
-   pieces of code.
+   Nine colours times three motions is twenty-seven outcomes.
 
-   p5.js is vendored in ../vendor/ rather than loaded from a CDN, because the
-   room may have no wifi.
+   p5.min.js sits in the same folder rather than being loaded from a CDN,
+   because the room may have no wifi.
    ========================================================================== */
 
 const channel = new BroadcastChannel(CHANNEL);
@@ -45,6 +109,10 @@ const ORB_COUNT = 7200;
    is what makes it read as depth rather than confetti. */
 const BOKEH_SHARE = 0.048;
 
+/* CODE REVIEW: a seeded random number generator. Math.random() gives a
+   different field every time the page loads; seeding it means the orbs land in
+   the same places every run, so the film looks the same for every visitor and
+   on every rehearsal. */
 function mulberry32(seed) {
   return function () {
     seed |= 0; seed = seed + 0x6D2B79F5 | 0;
@@ -54,6 +122,11 @@ function mulberry32(seed) {
   };
 }
 
+/* LEARNED FROM: arrays of objects (The Coding Train, 7.3 Arrays of Objects)
+   and particle systems (The Nature of Code, chapter 4). Every orb is one
+   object in the orbs array that remembers its own burst, angle, distance,
+   size and twinkle, and every frame loops through the array and asks each one
+   where it should be. That is the particle system idea in its simplest form. */
 function buildOrbs() {
   const rnd = mulberry32(20260924);
   orbs = [];
@@ -61,9 +134,9 @@ function buildOrbs() {
   const perBurst = Math.floor(ORB_COUNT / BURSTS);
   const dots     = Math.max(4, Math.floor(perBurst / RAYS_PER_BURST));
 
-  /* Explicit core, ray, dot. The earlier version derived all three from i with
-     modular arithmetic and the spokes came out scrambled, which is why it read
-     as a cloud instead of a firework. */
+  /* Explicit core, ray, dot. WHAT DIDN'T WORK: the earlier version derived all
+     three from i with modular arithmetic and the spokes came out scrambled,
+     which is why it read as a cloud instead of a firework. */
   for (let c = 0; c < BURSTS; c++) {
     for (let r = 0; r < RAYS_PER_BURST; r++) {
 
@@ -153,8 +226,13 @@ function buildSprite() {
 }
 
 /* ============================ EASING ============================ */
-/* Do not name any of these "smooth". p5 already owns that name and yours gets
-   overwritten by it, which silently breaks the sketch with no error at all. */
+/* LEARNED FROM: The Coding Train, "What is lerp?", and the p5.js lerp() and
+   map() reference pages. An easing curve is lerp with a bend in it: instead of
+   moving at a constant speed, things shoot off and settle, or start slowly and
+   build. The curve shapes are from easings.net. */
+/* WHAT DIDN'T WORK: do not name any of these "smooth". p5 already owns that
+   name and yours gets overwritten by it, which silently breaks the sketch with
+   no error at all. */
 
 const easeOutCubic   = t => 1 - Math.pow(1 - t, 3);
 const easeInOutCubic = t => t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t + 2, 3) / 2;
@@ -176,8 +254,10 @@ function heartbeat(seconds) {
              past the edge. Brighter as it goes. Some orbs burst ahead.
    SUPPRESS  swallowed inward fast, shrinking into the distance, but it never
              leaves: a small dim core stays and beats quietly.
-   DISMISS   sits almost still, cuts out in a single frame, and leaves a very
-             dark wash of the emotion colour behind. Not black.
+   DISMISS   ten small clusters of light. From 0.4 seconds they go one orb at
+             a time, one cluster after another, all gone by 4.5 seconds, while
+             a very dark wash of the emotion colour rises behind them. Not
+             black.
 
    Express and suppress both still exist at five seconds. Dismiss does not.
    ============================================================================= */
@@ -187,8 +267,8 @@ function heartbeat(seconds) {
    The note was fireworks: several going off at once, from different cores, at
    different moments. Everything before this radiated from one point in the
    middle, which is one firework on a loop, and one firework can never have a
-   gap in it. Nine cores scattered across the sky, each on its own clock and
-   its own scale, is what makes the wall read as a display.
+   gap in it. Sixteen cores (BURSTS) scattered across the sky, each on its own
+   clock and its own scale, is what makes the wall read as a display.
    ==================================================================== */
 
 const BURSTS = 16;
@@ -210,12 +290,17 @@ function buildBursts() {
   }
 }
 
-/* Rays per core, and how many dots strung out along each ray. 4200 orbs over
-   nine cores is about 466 each, so 58 rays of 8 gives a proper spray with
-   visible spokes rather than a cloud. */
+/* Rays per core. 7200 orbs over 16 bursts is 450 each, and 26 rays gives
+   about 17 dots strung out along each ray (buildOrbs works this out), which
+   reads as a spray with visible spokes rather than a cloud.
+   DOTS_PER_RAY below is left over from an earlier version with fewer orbs and
+   is no longer used; buildOrbs calculates the dots per ray itself. */
 const RAYS_PER_BURST = 26;
 const DOTS_PER_RAY   = 8;
 
+/* CODE REVIEW (express, suppress, dismiss): each takes one orb "o" and "t",
+   how far through the five second segment we are (0 to 1), and returns where
+   that orb is, how big and how bright, or null if it should not be drawn. */
 function express(o, t) {
   const B = bursts[o.ci];
   const k = (t * B.cycles + B.phase) % 1;
@@ -236,8 +321,13 @@ function express(o, t) {
 
   const lift = 0.95 + 0.45 * easeOutCubic(t);
 
-  /* ONE radius for both axes, so the burst is round. Spraying through RX and
-     RY separately squashed every burst into a flat ellipse. */
+  /* LEARNED FROM: polar coordinates (The Coding Train, 9.20 Polar
+     Coordinates, and The Nature of Code, 3.4). Each dot has its own angle
+     (o.ang) and distance, and cos() and sin() turn that into an x and a y.
+     Dots that share an angle line up into the rays of the firework. */
+  /* ONE radius for both axes, so the burst is round. WHAT DIDN'T WORK:
+     spraying through RX and RY separately squashed every burst into a flat
+     ellipse. */
   const R = minDim * 0.60;
 
   return {
@@ -257,7 +347,7 @@ function suppress(o, t) {
      The same dark emotion wash sits under this the whole segment, so it opens
      and closes the same way dismiss does and the film never jump cuts. */
 
-  /* nearly linear on purpose. Easing it made the whole withdrawal happen in
+  /* nearly linear on purpose. WHAT DIDN'T WORK: easing it made the whole withdrawal happen in
      the first two seconds and then sit there empty, which is not big, medium,
      small, gone: it is just gone. */
   const shrink = t * 0.92 + easeInOutCubic(t) * 0.08;
@@ -283,11 +373,12 @@ function suppress(o, t) {
   };
 }
 
-/* Two dismiss behaviours live here on purpose. Flip DISMISS_STYLE to compare
+/* KEPT ON PURPOSE, NOT COMMENTED OUT: three dismiss behaviours live here. Flip DISMISS_STYLE to compare
    them on the wall, which is the only place the difference actually matters.
-     'vanish'  the pixels arrive, then wink out one at a time (current)
-     'snap'    the pixels arrive, hold, and cut out in a single frame (original) */
-let DISMISS_STYLE = 'snap';     // flip to 'vanish' here, or type DISMISS_STYLE='vanish' in the console while it runs
+     'clusters' ten clusters go one orb at a time while the wash rises (current, Nov 2026)
+     'snap'     the pixels arrive, hold, and cut out in a single frame (used until Nov 2026)
+     'vanish'   the pixels arrive, then wink out one at a time */
+let DISMISS_STYLE = 'clusters'; // flip to 'snap' or 'vanish' here, or type DISMISS_STYLE='snap' in the console while it runs
 /* Two seconds in, not a fraction of the segment, so the hold is the same
    length no matter what SEGMENT_MS is set to. */
 const SNAP_AT_MS = 2000;
@@ -339,18 +430,168 @@ function dismissVanish(o, t) {
   };
 }
 
+/* ---------------------------- THE CLUSTERS ----------------------------
+   The current dismiss. A small separate set of orbs (about ninety), not taken
+   from the main field, so building them does not change a single random
+   number that express and suppress rely on. They get their own seed. */
+const CLUSTERS        = 10;
+const MIN_PER_CLUSTER = 6;
+const MAX_PER_CLUSTER = 12;
+const HOLD_MS         = 400;     // the clusters hold this long before the first orb goes
+const WASH_HOLD_MS    = 500;     // the end of the segment is just the wash, no orbs
+const CLEAR_BY_MS     = SEGMENT_MS - WASH_HOLD_MS;   // every orb gone by here (4.5 seconds)
+const ORB_FADE_MS     = 100;     // how long one orb takes to go (a little faster or slower each)
+const CLUSTER_GAP     = 2;       // a short pause, two orbs long, between one cluster and the next
+let clusterOrbs = [];
+
+/* CODE REVIEW: picks ten centres spread around the wall (a new centre is
+   rejected if it lands too close to one already chosen, so the clusters never
+   clump together), then puts six to twelve orbs around each one. Positions
+   are kept as fractions of the screen, so they still fit after a resize.
+   Then it works out when each orb goes (goAt): the clusters are put in a
+   random order, the orbs inside each cluster are shuffled, and they are
+   spaced evenly in one queue from HOLD_MS to CLEAR_BY_MS, with a small gap
+   between clusters. So only one cluster is ever going at a time. */
+function buildClusters() {
+  const rnd = mulberry32(51123);
+  const centres = [];
+  let tries = 0;
+
+  while (centres.length < CLUSTERS && tries < 5000) {
+    tries++;
+    const x = 0.08 + rnd() * 0.84;
+    const y = 0.12 + rnd() * 0.76;
+    let ok = true;
+    for (let i = 0; i < centres.length; i++) {
+      const dx = (x - centres[i].x) * 1.6;    // the wall is wider than it is tall
+      const dy = y - centres[i].y;
+      if (dx * dx + dy * dy < 0.28 * 0.28) { ok = false; break; }
+    }
+    if (ok) centres.push({ x: x, y: y });
+  }
+
+  clusterOrbs = [];
+  for (let c = 0; c < centres.length; c++) {
+    const count  = MIN_PER_CLUSTER + Math.floor(rnd() * (MAX_PER_CLUSTER - MIN_PER_CLUSTER + 1));
+    const spread = 0.055 + rnd() * 0.035;
+
+    for (let i = 0; i < count; i++) {
+      const a = rnd() * TWO_PI;
+      const r = Math.sqrt(rnd());
+      const isBokeh = rnd() < 0.18;
+
+      clusterOrbs.push({
+        cluster: true,
+        cx: centres[c].x,
+        cy: centres[c].y,
+        ox: Math.cos(a) * r,
+        oy: Math.sin(a) * r,
+        spread: spread,
+        z: 0.70 + rnd() * 0.30,
+        baseR: isBokeh ? 15 + rnd() * 13 : 5 + Math.pow(rnd(), 1.6) * 12,
+        bokeh: isBokeh,
+        dA: 0.65 + rnd() * 0.35,
+        pi: (Math.floor(rnd() * HUE_STEPS) * SHADE_STEPS) + Math.floor(rnd() * SHADE_STEPS),
+        twPhase: rnd() * TWO_PI,
+        twRate: 0.7 + rnd() * 1.9,
+        dPhase: rnd() * TWO_PI,
+        fadeRate: 0.85 + rnd() * 0.30,
+        ci: c,
+        goAt: 0
+      });
+    }
+  }
+
+  /* the order the clusters go in, then the order inside each cluster.
+     null in the queue is the short pause between two clusters. */
+  const order = [];
+  for (let c = 0; c < centres.length; c++) order.push(c);
+  shuffleInPlace(order, rnd);
+
+  const queue = [];
+  for (let n = 0; n < order.length; n++) {
+    const members = clusterOrbs.filter(o => o.ci === order[n]);
+    shuffleInPlace(members, rnd);
+    for (let i = 0; i < members.length; i++) queue.push(members[i]);
+    if (n < order.length - 1) {
+      for (let g = 0; g < CLUSTER_GAP; g++) queue.push(null);
+    }
+  }
+
+  /* the last orb has to have finished going by CLEAR_BY_MS, so the queue
+     stops one (slowest) orb fade short of it */
+  const span = CLEAR_BY_MS - HOLD_MS - ORB_FADE_MS * 1.15;
+  const step = span / (queue.length - 1);
+  for (let i = 0; i < queue.length; i++) {
+    if (queue[i]) queue[i].goAt = HOLD_MS + i * step;
+  }
+}
+
+/* Fisher-Yates shuffle, using the seeded random so the order is the same
+   every run. */
+function shuffleInPlace(list, rnd) {
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(rnd() * (i + 1));
+    const tmp = list[i];
+    list[i] = list[j];
+    list[j] = tmp;
+  }
+}
+
+/* CODE REVIEW: every cluster orb is at full brightness on the first frame.
+   When its own moment comes (goAt) it fades out over about ORB_FADE_MS, which
+   is quick enough that it reads as the orbs going one at a time.
+   The orbs in the main field are never drawn during dismiss (returns null). */
+function dismissClusters(o, t) {
+  if (!o.cluster) return null;
+  const ms = t * SEGMENT_MS;
+
+  const k = constrain((ms - o.goAt) / (ORB_FADE_MS * o.fadeRate), 0, 1);
+  const fade = Math.pow(1 - k, 1.5);
+  if (fade <= 0) return null;
+
+  const R = minDim * o.spread;
+  const sway = Math.sin(GLINT * 0.5 + o.dPhase) * 2;   // a couple of pixels, so it is not frozen
+
+  return {
+    x: o.cx * width  + o.ox * R + sway,
+    y: o.cy * height + o.oy * R + sway * 0.6,
+    size: o.baseR * o.z,
+    alpha: 270 * o.z * o.dA * fade,
+    orb: o
+  };
+}
+
+/* The wash for the clusters: nothing while they hold, then it slowly comes
+   up the whole time the orbs are going (eased, so it starts slowly), reaches
+   full as the last orb goes at CLEAR_BY_MS, and stays full to the end. */
+function clusterWash(t) {
+  const ms = t * SEGMENT_MS;
+  return easeInOutCubic(constrain((ms - HOLD_MS) / (CLEAR_BY_MS - HOLD_MS), 0, 1));
+}
+
 function dismiss(o, t) {
+  if (DISMISS_STYLE === 'clusters') return dismissClusters(o, t);
   return DISMISS_STYLE === 'snap' ? dismissSnap(o, t) : dismissVanish(o, t);
+}
+
+/* The clusters are their own small set of orbs, so a dismiss segment draws
+   that set instead of the main field. */
+function orbsFor(answer) {
+  return (answer === 'dismiss' && DISMISS_STYLE === 'clusters') ? clusterOrbs : orbs;
 }
 
 const BEHAVIOUR = { express, suppress, dismiss };
 
-/* How strong the dark residue is at this moment of a dismiss segment.
-   Rises quickly once the light cuts, then clears before the next scenario. */
+/* How strong the dark residue is at this moment of the segment.
+   Suppress, snap and vanish clear it before the next scenario. The clusters
+   hold it at full for the last 0.5 seconds instead. */
 function washFor(answer, t) {
-  /* dismiss gets the wash at full from frame one, so the dots are sitting on
+  /* clusters: the wash comes up slowly while the orbs go (clusterWash).
+     snap and vanish: the wash is at full from frame one, so the dots sit on
      the dark colour the whole time and what is left when they go is the same
-     dark colour, not a change of any kind. Suppress eases into it. */
+     dark colour. Suppress eases into it. */
+  if (answer === 'dismiss' && DISMISS_STYLE === 'clusters') return clusterWash(t);
   if (answer === 'dismiss') return t > 0.88 ? Math.max(0, 1 - (t - 0.88) / 0.12) : 1;
   if (answer === 'suppress') return dismissResidue(t);
   return 0;
@@ -365,6 +606,12 @@ function dismissResidue(t) {
   return inn * Math.max(0, out);
 }
 
+/* CODE REVIEW: how one answer eases into the next instead of cutting. For
+   the first half second of each segment, drawPlaying() asks every orb where
+   the previous behaviour left it and where the new one wants it, and this
+   mixes the two with p5's lerp() (position, size and brightness), shaped by
+   easeInOutCubic. Dismiss is the exception and is simply there, whole, on its
+   first frame. LEARNED FROM: the lerp tutorial above. */
 function blendOrbState(a, b, amount) {
   if (!a) return b;
   if (!b) return a;
@@ -447,11 +694,14 @@ function drawCalibrationTarget() {
    SETUP
    -------------------------------------------------------------------------- */
 
+/* CODE REVIEW: p5 calls setup() once when the page loads, then calls draw()
+   about sixty times a second for as long as the page is open. */
 function setup() {
   createCanvas(windowWidth, windowHeight);
   measure();
   buildBursts();
   buildOrbs();
+  buildClusters();
   buildSprite();
   noStroke();
   textFont('Georgia');
@@ -488,6 +738,11 @@ document.addEventListener('fullscreenchange', () => setTimeout(keepFullSize, 120
    THE DRAW LOOP
    -------------------------------------------------------------------------- */
 
+/* CODE REVIEW: every frame. If the corners are being set it paints the white
+   target; otherwise it clears to near black and draws whichever state the
+   piece is in (IDLE, ARMED, PLAYING or RESULT). This is a simple state
+   machine: arm(), begin(), finish() and reset() are the only places the state
+   changes. */
 function draw() {
   GLINT = millis() / 1000;
   keepFullSize();
@@ -519,9 +774,9 @@ function draw() {
 
 /* ============================ THE RENDERER ============================
 
-   p5's tint() rebuilds a tinted copy of the sprite every time the colour
-   changes. With 4200 orbs each on its own shade that is 4200 canvas rebuilds
-   per frame, and it ran at 1fps. So the tinting happens ONCE per emotion
+   WHAT DIDN'T WORK: p5's tint() rebuilds a tinted copy of the sprite every
+   time the colour changes. With 4200 orbs at the time, each on its own shade,
+   that was 4200 canvas rebuilds per frame, and it ran at 1fps. So the tinting happens ONCE per emotion
    colour instead: a small palette of pre-coloured sprites is baked the first
    time a colour is used, and each orb just picks the one it belongs to.
    Brightness then comes from globalAlpha, which is free.
@@ -581,7 +836,7 @@ function palette(rgb) {
   return palettes[key];
 }
 
-/* Reused every frame. Allocating 4200 objects 60 times a second is how you
+/* Reused every frame. Allocating thousands of objects 60 times a second is how you
    hand the garbage collector a reason to stutter halfway through someone's
    film. */
 const MAX_DISC = 118;
@@ -589,7 +844,7 @@ const MAX_DISC = 118;
 const FRAME = [];
 let frameLen = 0;
 
-let GLINT = 0;                       // set once per frame, not 4200 times
+let GLINT = 0;                       // set once per frame, not once per orb
 
 function blit(ctx, pal, s) {
   const o = s.orb;
@@ -620,13 +875,17 @@ function blit(ctx, pal, s) {
 
 /* getState(orb) returns a state or null. Orbs are already sorted far to near
    at build time, so plain index order is depth order and costs nothing. */
-function renderField(rgb, getState) {
+/* CODE REVIEW: draws the whole field for one frame. First it asks every orb
+   where it is, then draws the small sparkles with additive "lighter" blending
+   so they glow, then the big soft bokeh discs with normal blending so they sit
+   in front of each other like real out of focus lights. */
+function renderField(rgb, getState, list = orbs) {
   const pal = palette(rgb);
   const ctx = drawingContext;
 
   frameLen = 0;
-  for (let i = 0; i < orbs.length; i++) {
-    const s = getState(orbs[i]);
+  for (let i = 0; i < list.length; i++) {
+    const s = getState(list[i]);
     if (s) FRAME[frameLen++] = s;
   }
 
@@ -673,6 +932,9 @@ function drawArmed() {
         [200, 190, 220]);
 }
 
+/* CODE REVIEW: works out which answer is playing from the time since Start.
+   seg = which five second segment, t = how far through it (0 to 1). The
+   scenario gives the colour, the answer picks express, suppress or dismiss. */
 function drawPlaying() {
   const elapsed = millis() - startAt;
   const seg = Math.floor(elapsed / SEGMENT_MS);
@@ -686,7 +948,7 @@ function drawPlaying() {
   const rgb = scenario.rgb.split(',').map(n => parseInt(n, 10));
 
   /* The residue dismiss leaves behind. Painted UNDER the orbs in normal blend
-     mode, so once the light snaps out the wall holds a very dark version of
+     mode, so once the light has gone the wall holds a very dark version of
      the emotion colour rather than going to black. It clears itself before
      the next scenario starts. */
   {
@@ -704,8 +966,7 @@ function drawPlaying() {
   const was = seg > 0 ? BEHAVIOUR[answers[seg - 1]] : null;
 
   /* dismiss is deliberately not morphed in. Everything else eases out of the
-     previous segment over half a second, but dismiss has to arrive whole, the
-     same way it leaves. */
+     previous segment over half a second, but dismiss has to arrive whole. */
   const morph = (t < 0.10 && was && answers[seg] !== 'dismiss')
     ? easeInOutCubic(t / 0.10) : -1;
 
@@ -713,17 +974,19 @@ function drawPlaying() {
     const s = now(o, t);
     if (morph < 0) return s;
     return blendOrbState(was(o, 1.0), s, morph);
-  });
+  }, orbsFor(answers[seg]));
 
   if (typeof audioSegment === 'function') audioSegment(seg, t, scenario, answers[seg]);
 }
 
 /* ============================ THE TALLY ============================
 
-   Two beats. First their own nine, then the running total across every visit
-   so far. The running total lives in localStorage on this machine, so it
-   survives a reload and builds through the day without needing a server or
-   any network at all. Do not clear it: it is the piece's collected data.
+   Two beats on the wall: first their counts, then the verdict. Separately,
+   their answers are added to a running total across every visit. The running
+   total lives in localStorage on this machine, so it survives a reload and
+   builds through the day without needing a server or any network at all.
+   It is not shown on the wall. Do not clear it: it is the piece's collected
+   data.
    ==================================================================== */
 
 const TALLY_KEY = 'boxed-reflection-tally';
@@ -857,6 +1120,8 @@ function drawVerdictWords(keys, y, size, alpha) {
   textAlign(CENTER, CENTER);
 }
 
+/* CODE REVIEW: the results. For BEAT_ONE_MS it shows the counts, then for
+   BEAT_TWO_MS the verdict, then resets for the next visitor. */
 function drawResult() {
   const counts = countAnswers(answers);
 
@@ -949,6 +1214,9 @@ function drawResult() {
    STATE CHANGES
    -------------------------------------------------------------------------- */
 
+/* CODE REVIEW: the state changes. arm() stores the answers and waits,
+   begin() starts the film, finish() moves to the results and saves the tally,
+   reset() goes back to IDLE and tells the laptop it can start again. */
 function arm(list) {
   answers = list;
   state = 'ARMED';
